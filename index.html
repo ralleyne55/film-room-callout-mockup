@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Film Room Callout Mockup</title>
+<style>
+  :root {
+    --accent: #ffd21f;
+    --accent-soft: rgba(255, 210, 31, 0.45);
+    --text: #f2f5f9;
+    --text-muted: #c5cdd8;
+    --x-blue: #3d7bff;
+    --square-pink: #e0488e;
+    --panel: rgba(12, 16, 22, 0.9);
+    --font: Bahnschrift, "DIN Alternate", "Arial Narrow", Arial, sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    overflow: hidden;
+    background: #05070a;
+    font-family: var(--font);
+  }
+
+  /* Fixed 1920x1080 canvas, scaled to fit the window by the script below */
+  #stage {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: 1920px;
+    height: 1080px;
+    overflow: hidden;
+    background-color: #3f7d34;
+    /* Drop a real capture here to test over the actual game art */
+    background-image: var(--field-image, none);
+    background-size: cover;
+  }
+
+  #field {
+    position: absolute;
+    inset: 0;
+    background: repeating-linear-gradient(90deg, rgba(0, 0, 0, 0) 0 160px, rgba(0, 0, 0, 0.06) 160px 320px);
+  }
+
+  .endzone {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 6%;
+    background: #1f5fb4;
+  }
+
+  .yardline {
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: rgba(255, 255, 255, 0.8);
+  }
+
+  .yardline.scrimmage {
+    background: #3d6fd6;
+    height: 5px;
+  }
+
+  #vignette {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: radial-gradient(ellipse at 50% 45%, rgba(0, 0, 0, 0) 45%, rgba(0, 0, 0, 0.45) 100%);
+  }
+
+  .player {
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    margin: -13px 0 0 -13px;
+    border-radius: 50%;
+  }
+
+  .player.off {
+    background: #8fd0ff;
+    border: 3px solid #1b3c73;
+  }
+
+  .player.def {
+    background: #1d3a7a;
+    border: 3px solid #0b1b3d;
+    opacity: 0.85;
+  }
+
+  .ring {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    margin: -40px 0 0 -40px;
+    border: 6px solid var(--accent);
+    border-radius: 50%;
+    box-shadow: 0 0 18px var(--accent-soft);
+    opacity: 0;
+    transform: scale(1.25);
+    transition: opacity 0.35s ease, transform 0.35s ease;
+    pointer-events: none;
+  }
+
+  .ring.on {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  /* Objective tracker (top right) */
+  #objective {
+    position: absolute;
+    top: 52px;
+    right: 64px;
+    width: 700px;
+    padding: 22px 30px 24px;
+    background: var(--panel);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+  }
+
+  .obj-title {
+    padding-bottom: 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+    font-size: 44px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .obj-row {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin-top: 16px;
+    font-size: 28px;
+    color: var(--text-muted);
+  }
+
+  .check {
+    display: grid;
+    place-items: center;
+    width: 30px;
+    height: 30px;
+    border: 3px solid #cfd6df;
+    border-radius: 4px;
+    font-size: 22px;
+    font-weight: 700;
+    color: #0b0f14;
+  }
+
+  .check.done {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
+  .check.done::after {
+    content: "\2713";
+  }
+
+  .replay {
+    margin-left: auto;
+    background: none;
+    border: 0;
+    color: var(--accent);
+    font: 600 26px var(--font);
+    cursor: pointer;
+  }
+
+  .replay[hidden] {
+    display: none;
+  }
+
+  /* Leader line from the callout to its target */
+  #leader {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+  }
+
+  #leader.hidden {
+    opacity: 0;
+  }
+
+  #leaderLine {
+    stroke: var(--accent);
+    stroke-width: 3;
+    stroke-linecap: round;
+  }
+
+  #anchorDot {
+    fill: var(--accent);
+    stroke: rgba(255, 255, 255, 0.9);
+    stroke-width: 3;
+  }
+
+  /* Callout card */
+  .callout {
+    position: absolute;
+    width: 600px;
+    padding: 32px 36px 26px;
+    background: linear-gradient(180deg, rgba(24, 30, 40, 0.94), rgba(10, 13, 18, 0.94));
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+    transition: left 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+                top 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+                opacity 0.3s ease;
+    z-index: 3;
+  }
+
+  .callout::before {
+    content: "";
+    position: absolute;
+    left: 36px;
+    top: 0;
+    width: 72px;
+    height: 4px;
+    background: var(--accent);
+    border-radius: 0 0 4px 4px;
+  }
+
+  .callout.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .callout.swap {
+    animation: swapIn 0.35s ease;
+  }
+
+  @keyframes swapIn {
+    from { opacity: 0.4; transform: translateY(10px); }
+    to { opacity: 1; transform: none; }
+  }
+
+  .eyebrow {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  h2 {
+    margin: 10px 0 0;
+    font-size: 60px;
+    line-height: 1;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  p {
+    margin: 18px 0 28px;
+    font-size: 28px;
+    line-height: 1.45;
+    color: var(--text-muted);
+  }
+
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 22px;
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+  }
+
+  .progress {
+    display: flex;
+    gap: 10px;
+  }
+
+  .progress span {
+    width: 48px;
+    height: 6px;
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.2);
+    transition: background 0.3s ease;
+  }
+
+  .progress span.seen {
+    background: rgba(255, 210, 31, 0.55);
+  }
+
+  .progress span.current {
+    background: var(--accent);
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 34px;
+  }
+
+  .btn {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 6px 4px;
+    background: none;
+    border: 0;
+    color: var(--text);
+    font: 600 30px var(--font);
+    cursor: pointer;
+  }
+
+  .btn.ghost {
+    visibility: hidden;
+  }
+
+  .btn:focus-visible {
+    outline: 3px solid var(--accent);
+    outline-offset: 4px;
+    border-radius: 8px;
+  }
+
+  .glyph {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 22px;
+    font-weight: 700;
+  }
+
+  .glyph.x {
+    background: var(--x-blue);
+  }
+
+  .glyph.sq {
+    background: var(--square-pink);
+    border-radius: 8px;
+  }
+</style>
+</head>
+<body>
+<div id="stage">
+  <div id="field">
+    <div class="endzone"></div>
+    <div class="yardline" style="top: 16%"></div>
+    <div class="yardline" style="top: 30%"></div>
+    <div class="yardline" style="top: 44%"></div>
+    <div class="yardline" style="top: 58%"></div>
+    <div class="yardline scrimmage" style="top: 61.3%"></div>
+    <div class="yardline" style="top: 72%"></div>
+    <div class="yardline" style="top: 86%"></div>
+  </div>
+  <div id="vignette"></div>
+
+  <div id="rings"></div>
+
+  <svg id="leader" viewBox="0 0 1920 1080">
+    <line id="leaderLine" x1="0" y1="0" x2="0" y2="0"></line>
+    <circle id="anchorDot" cx="0" cy="0" r="10"></circle>
+    <circle id="anchorPulse" cx="0" cy="0" r="10" fill="none" stroke="#ffd21f" stroke-width="3">
+      <animate attributeName="r" values="10;26;10" dur="1.6s" repeatCount="indefinite"></animate>
+      <animate attributeName="opacity" values="0.9;0;0.9" dur="1.6s" repeatCount="indefinite"></animate>
+    </circle>
+  </svg>
+
+  <div id="objective">
+    <div class="obj-title">Film Room - Offensive Positions</div>
+    <div class="obj-row">
+      <span class="check" id="check"></span>
+      <span id="objText">0/1 Watch the play</span>
+      <button class="replay" id="replay" hidden>Replay</button>
+    </div>
+  </div>
+
+  <section class="callout" id="callout" aria-live="polite">
+    <div class="eyebrow" id="eyebrow"></div>
+    <h2 id="title"></h2>
+    <p id="body"></p>
+    <div class="footer">
+      <div class="progress" id="progress"></div>
+      <div class="actions">
+        <button class="btn ghost" id="back"><span class="glyph sq">&#9632;</span>Back</button>
+        <button class="btn" id="next"><span class="glyph x">&#10005;</span><span id="nextLabel">Next</span></button>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+  // Placeholder copy for steps 2 and 3 - swap in real tutorial text.
+  // Positions are percentages of the 1920x1080 canvas.
+  //   rings  - which highlight groups to show
+  //   anchor - the point on the field the callout points at
+  //   card   - top-left corner of the callout
+  const STEPS = [
+    {
+      title: 'The Offense',
+      body: 'This is the offense. The highlighted players are the team with the ball, and they work together to move it down the field.',
+      rings: ['line'],
+      anchor: [50, 61],
+      card: [28, 14]
+    },
+    {
+      title: 'The Quarterback',
+      body: 'The quarterback takes the snap from center and decides whether to hand the ball off, throw it, or keep it.',
+      rings: ['qb'],
+      anchor: [50, 78],
+      card: [62, 36]
+    },
+    {
+      title: 'Skill Players',
+      body: 'Receivers and the running back spread the defense out and create room to catch passes and make plays.',
+      rings: ['skill'],
+      anchor: [25, 64],
+      card: [28, 14]
+    }
+  ];
+
+  const RING_GROUPS = {
+    line: [[42.4, 61.3], [46.1, 61.3], [50, 61.3], [53.8, 61.3], [57.5, 61.3], [61.3, 61.3]],
+    qb: [[50, 78.2]],
+    skill: [[9.9, 60.4], [24.9, 64.4], [57.4, 78.2], [82, 64.4]]
+  };
+
+  const OFFENSE = [[9.9, 60.4], [24.9, 64.4], [42.4, 61.3], [46.1, 61.3], [50, 61.3], [53.8, 61.3],
+    [57.5, 61.3], [61.3, 61.3], [50, 78.2], [57.4, 78.2], [82, 64.4]];
+  const DEFENSE = [[30.6, 24.7], [63.7, 24.7], [49.5, 40.9], [58.6, 43.4], [11.6, 43.1],
+    [80.3, 43.4], [39.3, 53.3], [48.3, 52.9], [55.3, 52.9], [63.1, 52.9]];
+
+  const W = 1920;
+  const H = 1080;
+
+  const stage = document.getElementById('stage');
+  const rings = document.getElementById('rings');
+  const callout = document.getElementById('callout');
+  const eyebrow = document.getElementById('eyebrow');
+  const title = document.getElementById('title');
+  const body = document.getElementById('body');
+  const progress = document.getElementById('progress');
+  const back = document.getElementById('back');
+  const next = document.getElementById('next');
+  const nextLabel = document.getElementById('nextLabel');
+  const leader = document.getElementById('leader');
+  const leaderLine = document.getElementById('leaderLine');
+  const anchorDot = document.getElementById('anchorDot');
+  const anchorPulse = document.getElementById('anchorPulse');
+  const check = document.getElementById('check');
+  const objText = document.getElementById('objText');
+  const replay = document.getElementById('replay');
+
+  let index = 0;
+  let done = false;
+  let leaderTimer = null;
+
+  function addPlayers(list, cls) {
+    list.forEach(([x, y]) => {
+      const el = document.createElement('div');
+      el.className = 'player ' + cls;
+      el.style.left = x + '%';
+      el.style.top = y + '%';
+      stage.insertBefore(el, rings);
+    });
+  }
+
+  function buildRings() {
+    Object.entries(RING_GROUPS).forEach(([group, list]) => {
+      list.forEach(([x, y]) => {
+        const el = document.createElement('div');
+        el.className = 'ring';
+        el.dataset.group = group;
+        el.style.left = x + '%';
+        el.style.top = y + '%';
+        rings.appendChild(el);
+      });
+    });
+  }
+
+  function buildProgress() {
+    STEPS.forEach(() => progress.appendChild(document.createElement('span')));
+  }
+
+  function clamp(v, min, max) {
+    return Math.min(Math.max(v, min), max);
+  }
+
+  // Draws from the nearest edge of the callout to the anchor point
+  function drawLeader() {
+    const s = STEPS[index];
+    const cx = s.card[0] / 100 * W;
+    const cy = s.card[1] / 100 * H;
+    const ax = s.anchor[0] / 100 * W;
+    const ay = s.anchor[1] / 100 * H;
+    const sx = clamp(ax, cx, cx + callout.offsetWidth);
+    const sy = clamp(ay, cy, cy + callout.offsetHeight);
+
+    leaderLine.setAttribute('x1', sx);
+    leaderLine.setAttribute('y1', sy);
+    leaderLine.setAttribute('x2', ax);
+    leaderLine.setAttribute('y2', ay);
+    anchorDot.setAttribute('cx', ax);
+    anchorDot.setAttribute('cy', ay);
+    anchorPulse.setAttribute('cx', ax);
+    anchorPulse.setAttribute('cy', ay);
+    leader.classList.remove('hidden');
+  }
+
+  function render(i) {
+    const s = STEPS[i];
+
+    eyebrow.textContent = `Step ${i + 1} of ${STEPS.length}`;
+    title.textContent = s.title;
+    body.textContent = s.body;
+    nextLabel.textContent = i === STEPS.length - 1 ? 'Finish' : 'Next';
+    back.classList.toggle('ghost', i === 0);
+
+    [...progress.children].forEach((bar, n) => {
+      bar.className = n < i ? 'seen' : n === i ? 'current' : '';
+    });
+
+    rings.querySelectorAll('.ring').forEach(ring => {
+      ring.classList.toggle('on', s.rings.includes(ring.dataset.group));
+    });
+
+    callout.style.left = s.card[0] + '%';
+    callout.style.top = s.card[1] + '%';
+
+    // Restart the entrance animation for the new content
+    callout.classList.remove('swap');
+    void callout.offsetWidth;
+    callout.classList.add('swap');
+
+    // Hide the leader while the card moves, then draw it at the new spot
+    leader.classList.add('hidden');
+    clearTimeout(leaderTimer);
+    leaderTimer = setTimeout(drawLeader, 460);
+  }
+
+  function finish() {
+    done = true;
+    callout.classList.add('hidden');
+    leader.classList.add('hidden');
+    rings.querySelectorAll('.ring').forEach(ring => ring.classList.remove('on'));
+    check.classList.add('done');
+    objText.textContent = '1/1 Watch the play';
+    replay.hidden = false;
+  }
+
+  function restart() {
+    done = false;
+    index = 0;
+    check.classList.remove('done');
+    objText.textContent = '0/1 Watch the play';
+    replay.hidden = true;
+    callout.classList.remove('hidden');
+    render(index);
+  }
+
+  function goNext() {
+    if (done) return;
+    if (index < STEPS.length - 1) {
+      index++;
+      render(index);
+    } else {
+      finish();
+    }
+  }
+
+  function goBack() {
+    if (done || index === 0) return;
+    index--;
+    render(index);
+  }
+
+  // Scale the 1920x1080 canvas to fit any window size
+  function fit() {
+    const s = Math.min(innerWidth / W, innerHeight / H);
+    stage.style.transform = `translate(-50%, -50%) scale(${s})`;
+    if (!done && !leader.classList.contains('hidden')) drawLeader();
+  }
+
+  next.addEventListener('click', goNext);
+  back.addEventListener('click', goBack);
+  replay.addEventListener('click', restart);
+
+  // ArrowRight / X advance, ArrowLeft / Backspace go back
+  document.addEventListener('keydown', e => {
+    if (e.code === 'ArrowRight' || e.code === 'KeyX') goNext();
+    if (e.code === 'ArrowLeft' || e.code === 'Backspace') goBack();
+  });
+
+  window.addEventListener('resize', fit);
+
+  addPlayers(OFFENSE, 'off');
+  addPlayers(DEFENSE, 'def');
+  buildRings();
+  buildProgress();
+  fit();
+  render(index);
+</script>
+</body>
+</html>
